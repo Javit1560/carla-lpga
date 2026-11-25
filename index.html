@@ -3049,7 +3049,7 @@ function setRound(r,btn){
 }
 function hsSet(h,field,val){
   var t=_hsTor(); if(!t) return;
-  var d=_hsData(true);
+  var d=_hsData(true); if(!d) return;
   var rec=d[h]=d[h]||{};
   if(field==='dist'){
     var n=_num(val);
@@ -3061,7 +3061,8 @@ function hsSet(h,field,val){
   saveData(); renderHoleSummary();
 }
 function hsCycle(h,field){
-  var d=_hsData(true), rec=d[h]=d[h]||{};
+  var d=_hsData(true); if(!d) return;
+  var rec=d[h]=d[h]||{};
   rec[field]=rec[field]===true?false:(rec[field]===false?null:true);
   saveData(); renderHoleStats();
 }
@@ -3365,7 +3366,6 @@ function delPersonalEvent(id){
   D.personalEvents=D.personalEvents.filter(function(x){return x.id!==id;});
   saveData(); renderAgenda(); renderHomeAvisos();
 }
-function _openAddTorneoSheet(){openSheet('addTour');}
 
 // ============================================================
 // FOTO DE PERFIL
@@ -3421,4 +3421,171 @@ function init(){
   });
 }
 if(document.readyState==='loading') document.addEventListener('DOMContentLoaded',init); else init();
+
+// ============================================================
+// AÑADIR / IMPORTAR TORNEOS
+// ============================================================
+var TOURS_DATA={
+  women:{
+    main:[{id:'lpga',name:'LPGA Tour',tour:'LPGA',color:'#0055cc',letter:'L',url:'https://www.lpga.com',espn:'lpga'},
+          {id:'let',name:'Ladies European Tour (LET)',tour:'LET',color:'#7c3aed',letter:'L',url:'https://www.ladieseuropeantour.com'}],
+    dev:[{id:'epson',name:'Epson Tour',tour:'Epson',color:'#059669',letter:'E',url:'https://www.epsontour.com'},
+         {id:'letaccess',name:'LET Access Series',tour:'LET Access',color:'#0891b2',letter:'L',url:'https://www.letaccess.com'},
+         {id:'santander',name:'Santander Golf Tour',tour:'Santander',color:'#b45309',letter:'S',url:'https://www.santandergolftour.com'}],
+    regional:[{id:'klpga',name:'KLPGA Tour',tour:'KLPGA',color:'#dc2626',letter:'K',url:'https://www.klpga.co.kr'},
+              {id:'jlpga',name:'JLPGA Tour',tour:'JLPGA',color:'#d97706',letter:'J',url:'https://www.jlpga.or.jp'},
+              {id:'aramco',name:'Aramco Team Series',tour:'Aramco',color:'#6d28d9',letter:'A',url:'https://www.aramcoteamseries.com'}]
+  },
+  men:{
+    main:[{id:'pga',name:'PGA Tour',tour:'PGA',color:'#00563f',letter:'P',url:'https://www.pgatour.com',espn:'pga'},
+          {id:'dpworld',name:'DP World Tour',tour:'DP World',color:'#003087',letter:'D',url:'https://www.dpworldtour.com',espn:'eur'}],
+    dev:[{id:'challenge',name:'Challenge Tour',tour:'Challenge',color:'#0891b2',letter:'C',url:'https://www.challengetour.com'},
+         {id:'alps',name:'Alps Tour',tour:'Alps',color:'#059669',letter:'A',url:'https://www.alpstour.com'},
+         {id:'pgaesp',name:'PGA de España',tour:'PGA España',color:'#dc2626',letter:'P',url:'https://www.pgadeespana.com'}],
+    regional:[{id:'kornferry',name:'Korn Ferry Tour',tour:'Korn Ferry',color:'#7c3aed',letter:'K',url:'https://www.pgatour.com/korn-ferry-tour'},
+              {id:'asian',name:'Asian Tour',tour:'Asian',color:'#b45309',letter:'A',url:'https://www.asiantour.com'},
+              {id:'sunshine',name:'Sunshine Tour',tour:'Sunshine',color:'#d97706',letter:'S',url:'https://www.sunshinetour.com'}]
+  }
+};
+var _importGender='women', _impEvents=[];
+
+function _openAddTorneoSheet(){
+  var B=document.getElementById('shBody');
+  var card=function(id,bg,ico,t,s){return '<div id="'+id+'" style="background:var(--bg3);border-radius:var(--r);padding:14px 16px;margin-bottom:9px;cursor:pointer;display:flex;align-items:center;gap:14px"><div style="width:44px;height:44px;border-radius:12px;background:'+bg+';display:flex;align-items:center;justify-content:center;font-size:22px;flex-shrink:0">'+ico+'</div><div style="flex:1"><div style="font-size:14px;font-weight:800;color:var(--text)">'+t+'</div><div style="font-size:12px;color:var(--text4);margin-top:2px">'+s+'</div></div><span style="color:var(--text4)">›</span></div>';};
+  B.innerHTML='<div class="sh-title">'+LS('Añadir torneo','Add tournament')+'</div>'+
+    card('_abt1','#E5F1FF','📅',LS('Calendario de un tour','Tour calendar'),LS('Elige un tour y selecciona torneos concretos','Pick a tour and select specific events'))+
+    card('_abt2','#FFF4E0','🔗',LS('Importar por URL','Import by URL'),LS('Pega el enlace de un torneo','Paste a tournament link'))+
+    card('_abt3','#EAF3DE','✏️',LS('Añadir manualmente','Add manually'),LS('Nombre, fechas y campo','Name, dates and venue'))+
+    '<button class="btn btn-gray" style="width:100%;margin-top:4px" onclick="closeSheet()">'+T('cancelLbl')+'</button>';
+  document.getElementById('ov').classList.add('open');
+  document.getElementById('_abt1').onclick=openImportTours;
+  document.getElementById('_abt2').onclick=_openImportByUrl;
+  document.getElementById('_abt3').onclick=function(){openSheet('addTour');};
+}
+function openImportTours(){
+  var B=document.getElementById('shBody'), d=TOURS_DATA[_importGender];
+  var lbl=lang==='es'?{main:'Tours principales',dev:'Tours de desarrollo',regional:'Tours regionales'}:{main:'Main tours',dev:'Development tours',regional:'Regional tours'};
+  var row=function(t){return '<div data-tid="'+t.id+'" class="imp-tour" style="display:flex;align-items:center;gap:10px;padding:10px;background:var(--bg3);border-radius:10px;margin-bottom:6px;cursor:pointer"><div style="width:32px;height:32px;border-radius:8px;background:'+t.color+';display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:800;color:#fff;flex-shrink:0">'+t.letter+'</div><div style="flex:1;font-size:13px;font-weight:700">'+esc(t.name)+'</div><span style="font-size:11px;color:var(--blue);font-weight:700">'+(t.espn?LS('Ver calendario','View calendar'):LS('Abrir','Open'))+' ›</span></div>';};
+  B.innerHTML='<div class="sh-title">'+LS('Elige un tour','Choose a tour')+'</div>'+
+    '<div class="tab-bar" style="margin-bottom:12px"><button class="tab-btn'+(_importGender==='women'?' on':'')+'" id="genW">'+LS('Mujeres','Women')+'</button><button class="tab-btn'+(_importGender==='men'?' on':'')+'" id="genM">'+LS('Hombres','Men')+'</button></div>'+
+    ['main','dev','regional'].map(function(s){return '<div class="slabel">'+lbl[s]+'</div>'+d[s].map(row).join('');}).join('')+
+    '<button class="btn btn-gray" style="width:100%;margin-top:8px" id="impBack">'+LS('Volver','Back')+'</button>';
+  document.getElementById('ov').classList.add('open');
+  document.getElementById('genW').onclick=function(){_importGender='women';openImportTours();};
+  document.getElementById('genM').onclick=function(){_importGender='men';openImportTours();};
+  document.getElementById('impBack').onclick=_openAddTorneoSheet;
+  B.querySelectorAll('.imp-tour').forEach(function(el){el.onclick=function(){openTourCalendar(el.getAttribute('data-tid'));};});
+}
+function _findTourCfg(id){
+  var r=null;['women','men'].forEach(function(g){['main','dev','regional'].forEach(function(s){TOURS_DATA[g][s].forEach(function(t){if(t.id===id)r=t;});});});
+  return r;
+}
+function _impDateStr(s,e){
+  var p=function(d){return String(d.getUTCDate()).padStart(2,'0')+'/'+String(d.getUTCMonth()+1).padStart(2,'0')+'/'+d.getUTCFullYear();};
+  return p(s)+' - '+p(e);
+}
+async function _fetchEspnCalendar(league){
+  var ctl=new AbortController(), to=setTimeout(function(){ctl.abort();},12000);
+  try{
+    var r=await fetch('https://site.api.espn.com/apis/site/v2/sports/golf/'+league+'/scoreboard',{signal:ctl.signal});
+    if(!r.ok) throw new Error('http');
+    var j=await r.json();
+    var cal=(j.leagues&&j.leagues[0]&&j.leagues[0].calendar)||[];
+    return cal.map(function(c){
+      var s=new Date(c.startDate), e=new Date(c.endDate||c.startDate);
+      if(isNaN(s)||isNaN(e)) return null;
+      return {name:String(c.label||'').trim(),start:s,end:e};
+    }).filter(function(x){return x&&x.name;});
+  } finally{clearTimeout(to);}
+}
+async function openTourCalendar(id){
+  var cfg=_findTourCfg(id); if(!cfg) return;
+  var B=document.getElementById('shBody');
+  var back='<button class="btn btn-gray" style="width:100%;margin-top:8px" id="impBack2">'+LS('Volver','Back')+'</button>';
+  var wire=function(){var b=document.getElementById('impBack2');if(b)b.onclick=openImportTours;};
+  if(!cfg.espn){
+    B.innerHTML='<div class="sh-title">'+esc(cfg.name)+'</div>'+
+      '<div class="alert al-b" style="margin-bottom:12px">'+LS('Este tour no tiene calendario que la app pueda leer automáticamente. Abre su web, copia el torneo que quieras y añádelo a mano (o pega el enlace en "Importar por URL").','The app cannot read this tour\'s calendar automatically. Open its site, pick the event and add it manually (or paste the link in "Import by URL").')+'</div>'+
+      '<a class="btn btn-blue" style="display:block;text-align:center;text-decoration:none;margin-bottom:8px" target="_blank" rel="noopener" href="'+esc(cfg.url)+'">🌐 '+LS('Abrir web del tour','Open tour website')+'</a>'+
+      '<button class="btn btn-gray" style="width:100%" id="impManual">✏️ '+LS('Añadir manualmente','Add manually')+'</button>'+back;
+    document.getElementById('impManual').onclick=function(){openSheet('addTour');setTimeout(function(){var s=document.getElementById('nt_tour');if(s)s.value=cfg.tour;var u=document.getElementById('nt_lu');if(u)u.value=cfg.url;},0);};
+    wire(); return;
+  }
+  B.innerHTML='<div class="sh-title">'+esc(cfg.name)+'</div><div style="text-align:center;padding:30px;color:var(--text4);font-size:13px">⏳ '+LS('Cargando calendario...','Loading calendar...')+'</div>';
+  try{
+    var ev=await _fetchEspnCalendar(cfg.espn);
+    if(!ev.length) throw new Error('empty');
+    ev.sort(function(a,b){return a.start-b.start;});
+    var now=new Date(); now.setDate(now.getDate()-1);
+    _impEvents=ev.map(function(e){
+      e.dates=_impDateStr(e.start,e.end);
+      e.exists=D.tournaments.some(function(t){return t.name.toLowerCase()===e.name.toLowerCase()||(t.dates===e.dates&&t.tour===cfg.tour);});
+      e.past=e.end<now;
+      return e;
+    });
+    var upcoming=_impEvents.filter(function(e){return !e.past;});
+    var rows=(upcoming.length?upcoming:_impEvents).map(function(e){
+      var i=_impEvents.indexOf(e);
+      return '<label style="display:flex;align-items:center;gap:10px;padding:9px 10px;background:var(--bg3);border-radius:10px;margin-bottom:6px;'+(e.exists?'opacity:.5':'cursor:pointer')+'"><input type="checkbox" class="imp-ck" data-i="'+i+'" '+(e.exists?'disabled':'')+' style="width:18px;height:18px"><div style="flex:1;min-width:0"><div style="font-size:13px;font-weight:800">'+esc(e.name)+'</div><div style="font-size:11px;color:var(--text4)">'+e.dates+(e.exists?' · '+LS('ya en tu calendario','already in your calendar'):'')+'</div></div></label>';
+    }).join('');
+    B.innerHTML='<div class="sh-title">'+esc(cfg.name)+'</div>'+
+      '<div style="font-size:12px;color:var(--text4);margin-bottom:10px">'+LS('Marca los torneos que quieras añadir. Entrarán como "Por decidir"; luego les pones el estado y el campo.','Tick the events to add. They are added as "TBD"; set status and venue afterwards.')+'</div>'+
+      '<div style="max-height:46vh;overflow-y:auto;-webkit-overflow-scrolling:touch">'+rows+'</div>'+
+      '<button class="btn btn-blue" style="width:100%;margin-top:10px" id="impAddSel">'+LS('Añadir seleccionados','Add selected')+'</button>'+back;
+    document.getElementById('impAddSel').onclick=function(){confirmImportEvents(cfg);};
+    wire();
+  }catch(e){
+    B.innerHTML='<div class="sh-title">'+esc(cfg.name)+'</div>'+
+      '<div class="alert al-o" style="margin-bottom:12px">'+LS('No se pudo cargar el calendario (¿sin conexión o servicio no disponible?). Puedes abrir la web del tour y añadir el torneo a mano.','Could not load the calendar (offline or service unavailable). You can open the tour site and add the event manually.')+'</div>'+
+      '<a class="btn btn-blue" style="display:block;text-align:center;text-decoration:none;margin-bottom:8px" target="_blank" rel="noopener" href="'+esc(cfg.url)+'">🌐 '+LS('Abrir web del tour','Open tour website')+'</a>'+
+      '<button class="btn btn-gray" style="width:100%" id="impManual">✏️ '+LS('Añadir manualmente','Add manually')+'</button>'+back;
+    document.getElementById('impManual').onclick=function(){openSheet('addTour');};
+    wire();
+  }
+}
+function confirmImportEvents(cfg){
+  var sel=[].slice.call(document.querySelectorAll('.imp-ck:checked')).map(function(c){return _impEvents[+c.getAttribute('data-i')];});
+  if(!sel.length){alert(LS('Selecciona al menos un torneo','Select at least one event'));return;}
+  sel.forEach(function(e,k){
+    D.tournaments.push({id:Date.now()+k,name:e.name,dates:e.dates,venue:'',purse:'',status:'tbd',tour:cfg.tour,lpgaUrl:cfg.url,courseUrl:''});
+  });
+  _sortTournaments(); saveData(); closeSheet();
+  try{renderTournaments();renderCalMes();renderAllHomeNew();}catch(e){}
+  _toast(sel.length+' '+LS('torneo(s) añadido(s)','event(s) added'));
+}
+
+// Importar por URL (rellena un formulario con lo que se pueda detectar)
+function _openImportByUrl(){
+  var B=document.getElementById('shBody');
+  B.innerHTML='<div class="sh-title">'+LS('Importar por URL','Import by URL')+'</div>'+
+    '<div class="fg"><label class="fl">'+LS('Enlace del torneo','Tournament link')+'</label><input class="fi" id="impUrl" placeholder="https://www.lpga.com/tournaments/..."></div>'+
+    '<div style="font-size:11px;color:var(--text4);margin-bottom:10px">'+LS('Se intentan leer nombre y fechas de la página; siempre podrás corregirlos antes de guardar.','The app tries to read name and dates from the page; you can always correct them before saving.')+'</div>'+
+    '<button class="btn btn-blue" style="width:100%" id="impUrlGo">'+LS('Leer enlace','Read link')+'</button>'+
+    '<button class="btn btn-gray" style="width:100%;margin-top:8px" id="impBack3">'+LS('Volver','Back')+'</button>';
+  document.getElementById('ov').classList.add('open');
+  document.getElementById('impBack3').onclick=_openAddTorneoSheet;
+  document.getElementById('impUrlGo').onclick=async function(){
+    var url=(document.getElementById('impUrl').value||'').trim();
+    if(!/^https?:\/\//i.test(url)){alert(LS('Introduce un enlace válido (https://...)','Enter a valid link (https://...)'));return;}
+    var btn=this; btn.disabled=true; btn.textContent=LS('Leyendo...','Reading...');
+    var title='', text='';
+    try{
+      var ctl=new AbortController(); var to=setTimeout(function(){ctl.abort();},12000);
+      var r=await fetch('https://api.allorigins.win/get?url='+encodeURIComponent(url),{signal:ctl.signal}); clearTimeout(to);
+      var j=await r.json(), html=j.contents||'';
+      var m=html.match(/<title[^>]*>([^<]*)<\/title>/i); if(m) title=m[1].replace(/\s+/g,' ').trim().split(/[|–—]/)[0].trim();
+      text=html.replace(/<script[\s\S]*?<\/script>/gi,'').replace(/<style[\s\S]*?<\/style>/gi,'').replace(/<[^>]+>/g,' ').replace(/\s+/g,' ').slice(0,8000);
+    }catch(e){}
+    var mon='January|February|March|April|May|June|July|August|September|October|November|December|Jan|Feb|Mar|Apr|Jun|Jul|Aug|Sep|Sept|Oct|Nov|Dec';
+    var dm=text.match(new RegExp('('+mon+')\\.?\\s+\\d{1,2}\\s*[-–]\\s*(?:('+mon+')\\.?\\s+)?\\d{1,2}','i'));
+    var tour=/lpga\.com/.test(url)?'LPGA':/ladieseuropeantour/.test(url)?'LET':/epsontour/.test(url)?'Epson':/pgatour\.com/.test(url)?'PGA':/dpworldtour/.test(url)?'DP World':'Other';
+    openSheet('addTour');
+    setTimeout(function(){
+      var set=function(id,v){var e=document.getElementById(id);if(e&&v)e.value=v;};
+      set('nt_n',title); set('nt_d',dm?dm[0].replace('–','-'):''); set('nt_lu',url);
+      var s=document.getElementById('nt_tour'); if(s) s.value=tour;
+      if(!title&&!dm) _toast(LS('No se pudo leer la página; rellena los datos a mano','Could not read the page; fill in the details manually'));
+    },0);
+  };
+}
 </script></body></html>
